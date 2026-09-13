@@ -1324,6 +1324,24 @@ class ParserTest {
     }
 
     @Test
+    void codeCalloutItemWithoutMarkerIsKept() { // the list is not rebuilt from the markers, an item without one stays
+        final var body = new Parser().parseBody(new Reader(List.of("""
+                [source,java]
+                ----
+                a(); <1>
+                b();
+                ----
+                <1> One.
+                <2> Two.
+                """.split("\n"))), null);
+        final var one = new CallOut(1, new Text(List.of(), "One.", Map.of()));
+        final var two = new CallOut(2, new Text(List.of(), "Two.", Map.of()));
+        assertEquals(
+                List.of(new Code("a();\nb();\n", Map.of("language", "java"), false, List.of(List.of(one), List.of()), List.of(one, two))),
+                body.children());
+    }
+
+    @Test
     void codeCalloutsMismatchIgnoredOnDemand() { // :callout-mismatch: ignore keeps the document, as asciidoctor does
         final var body = new Parser().parseBody(new Reader(List.of("""
                 :callout-mismatch: ignore

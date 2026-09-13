@@ -1016,7 +1016,7 @@ public class AsciidoctorLikeHtmlRenderer implements Visitor<String> {
             builder.append("</pre>\n </div>\n </div>\n");
         }
 
-        final var callOuts = element.callOuts(); // derived from the lines, so materialized once
+        final var callOuts = element.callOuts(); // the whole list, items without a marker in the code included
         if (!callOuts.isEmpty()) {
             final var icons = icons();
             builder.append(" <div class=\"colist arabic\">\n");

@@ -27,15 +27,18 @@ import java.util.Map;
  * @param inline       true for an inline code span.
  * @param lineCallOuts one entry per line of {@code value}, listing the callouts whose markers ended that line
  *                     (empty lists for lines without a marker); empty when the block has no callout.
+ * @param callOuts     the callout list written after the block, in its order, including the items whose marker is
+ *                     not in the code.
  */
 public record Code(String value, Map<String, String> options, boolean inline,
-                   List<List<CallOut>> lineCallOuts) implements Element {
+                   List<List<CallOut>> lineCallOuts, List<CallOut> callOuts) implements Element {
     /**
-     * @return the callouts of the block in the order their markers appear in the code, each one once even when its
-     * marker sits on several lines. Computed from {@link #lineCallOuts()} on each call.
+     * Code whose callout list is exactly the callouts of its markers, in the order the markers appear in the code,
+     * each one once even when its marker sits on several lines.
      */
-    public List<CallOut> callOuts() {
-        return lineCallOuts.stream().flatMap(Collection::stream).distinct().toList();
+    public Code(final String value, final Map<String, String> options, final boolean inline,
+                final List<List<CallOut>> lineCallOuts) {
+        this(value, options, inline, lineCallOuts, lineCallOuts.stream().flatMap(Collection::stream).distinct().toList());
     }
 
     @Override

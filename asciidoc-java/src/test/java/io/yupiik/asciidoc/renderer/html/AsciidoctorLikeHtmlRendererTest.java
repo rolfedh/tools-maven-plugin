@@ -1606,6 +1606,41 @@ class AsciidoctorLikeHtmlRendererTest {
     }
 
     @Test
+    void calloutItemWithoutMarkerIsListed() {
+        assertRenderingContent("""
+                        [source,properties]
+                        ----
+                        a = b <1>
+                        c = d
+                        ----
+                        <1> First.
+                        <2> Second.""",
+                """
+                 <div class="listingblock">
+                 <div class="content">
+                 <pre class="highlightjs highlight"><code class="language-properties hljs" data-lang="properties">a = b <b class="conum">(1)</b>
+                c = d
+                </code></pre>
+                 </div>
+                 </div>
+                 <div class="colist arabic">
+                  <ol>
+                   <li>
+                 <span>
+                First.
+                 </span>
+                   </li>
+                   <li>
+                 <span>
+                Second.
+                 </span>
+                   </li>
+                  </ol>
+                 </div>
+                """);
+    }
+
+    @Test
     void jsonSchemaMinisiteGeneratorSupport() {
         assertRenderingContent("= io.yupiik.test.MyRootObject\n" +
                         "\n" +

@@ -905,7 +905,7 @@ public class Parser {
             return new Paragraph(p.children(), Map.copyOf(opts));
         }
         if (element instanceof Code c) {
-            return new Code(c.value(), Map.copyOf(opts), c.inline(), c.lineCallOuts());
+            return new Code(c.value(), Map.copyOf(opts), c.inline(), c.lineCallOuts(), c.callOuts());
         }
         return element;
     }
@@ -1079,7 +1079,8 @@ public class Parser {
         final var lineCallOuts = contentWithCallouts.lineReferences().stream()
                 .map(refs -> refs.stream().map(byNumber::get).filter(Objects::nonNull).toList())
                 .toList();
-        return new Code(subs(contentWithCallouts.content(), currentAttributes, substitutions), codeOptions, false, lineCallOuts);
+        // the list also keeps an item whose marker is not in the code
+        return new Code(subs(contentWithCallouts.content(), currentAttributes, substitutions), codeOptions, false, lineCallOuts, List.copyOf(callOuts));
     }
 
     private List<CallOut> parseCallOuts(final Path enclosingDocument, final Reader reader,
@@ -2795,7 +2796,7 @@ public class Parser {
             return new Text(t.style(), t.value(), merge(t.options(), element.options()));
         }
         if (first instanceof Code c) {
-            return new Code(c.value(), merge(c.options(), element.options()), c.inline(), c.lineCallOuts());
+            return new Code(c.value(), merge(c.options(), element.options()), c.inline(), c.lineCallOuts(), c.callOuts());
         }
         if (first instanceof Link l) {
             return new Link(l.url(), l.label(), merge(l.options(), element.options()));
