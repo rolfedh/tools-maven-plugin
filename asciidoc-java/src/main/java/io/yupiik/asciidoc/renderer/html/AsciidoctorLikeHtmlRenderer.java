@@ -1517,13 +1517,7 @@ public class AsciidoctorLikeHtmlRenderer implements Visitor<String> {
             return;
         }
 
-        final String resolvedSrc;
-        if (element.label().startsWith("data:")) {
-            resolvedSrc = element.label();
-        } else {
-            String imagesDir = attr("imagesdir", "");
-            resolvedSrc = (imagesDir.isEmpty() || imagesDir.endsWith("/")) ? imagesDir + element.label() : imagesDir + "/" + element.label();
-        }
+        final var resolvedSrc = element.label().startsWith("data:") ? element.label() : sibling.imageTarget(element, context());
 
         if (!this.state.visitingWrapperLink) {
             String linkValue = element.options().get("link");
@@ -1551,7 +1545,7 @@ public class AsciidoctorLikeHtmlRenderer implements Visitor<String> {
 
         builder.append(addSpan ? "" : " ").append("<img src=\"")
                 .append(resolvedSrc)
-                .append("\" alt=\"").append(element.options().getOrDefault("alt", element.options().getOrDefault("", element.label())))
+                .append("\" alt=\"").append(sibling.imageAlt(element, element.label()))
                 .append('"');
         if (element.options().containsKey("width")) {
             builder.append(" width=\"").append(element.options().get("width")).append('"');
