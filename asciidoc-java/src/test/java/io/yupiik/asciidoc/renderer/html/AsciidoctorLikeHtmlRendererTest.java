@@ -3037,6 +3037,18 @@ class AsciidoctorLikeHtmlRendererTest {
                         """);
     }
 
+    @Test
+    void keyboardKeys() { // as asciidoctor, kbd keys are split on the first + or , after the first character, a trailing one is a key
+        assertRenderingContent("Press kbd:[Ctrl,Shift] or kbd:[Ctrl++] or kbd:[Ctrl+C].\n", """
+                 <div class="paragraph">
+                 <p>Press <kbd>Ctrl</kbd> + <kbd>Shift</kbd>
+                 or <kbd>Ctrl</kbd> + <kbd>+</kbd>
+                 or <kbd>Ctrl</kbd> + <kbd>C</kbd>
+                .</p>
+                 </div>
+                """);
+    }
+
     private void assertRenderingContent(final String adoc, final String html) {
         assertRenderingContent(adoc, html, null);
     }
