@@ -1525,6 +1525,7 @@ public class Parser {
                                      final ContentResolver resolver, final Map<String, String> currentAttributes,
                                      final boolean supportComplexStructures /* title case for ex */) {
         final var elements = new ArrayList<Element>();
+        BitSet lineStarts = null; // index of the first element of each line after the first one, created with the second line
         String line;
         while ((line = reader.nextLine()) != null && !line.isBlank()) {
             final var stripped = line.strip();
@@ -1541,6 +1542,12 @@ public class Parser {
                 hardBreak = true;
                 line = line.substring(0, line.length() - 2);
             }
+            if (!elements.isEmpty()) {
+                if (lineStarts == null) {
+                    lineStarts = new BitSet();
+                }
+                lineStarts.set(elements.size());
+            }
             elements.addAll(parseLine(enclosingDocument, reader, earlyAttributeReplacement(line, currentAttributes), resolver, currentAttributes, supportComplexStructures, options == null ? Map.of() : options));
             if (hardBreak) {
                 elements.add(new LineBreak());
@@ -1556,7 +1563,107 @@ public class Parser {
                 }
             }
         }
-        return new Paragraph(flattenTexts(elements), options == null ? Map.of() : options);
+        return new Paragraph(flattenTexts(lineStarts == null ? elements : withLineEnds(elements, lineStarts)), options == null ? Map.of() : options);
+    }
+
+    // asciidoctor joins the lines of a paragraph with a line feed, which shows as a space; mergeTexts() writes it between two
+    // plain texts, so it is only added where a line starts or ends with another inline element. a conditional block takes it
+    // at the start of each branch, so a branch that renders nothing leaves no space behind, and at the end of each branch
+    // when only conditional blocks come before it since the paragraph start or a hard line break
+    private List<Element> withLineEnds(final List<Element> elements, final BitSet lineStarts) {
+        final var out = new ArrayList<Element>(elements.size() + lineStarts.cardinality());
+        boolean onlyConditionals = true; // since the paragraph start or the last hard line break
+        for (int i = 0; i < elements.size(); i++) {
+            final var element = lineStarts.get(i) && !out.isEmpty() && needsLineEnd(out.get(out.size() - 1), elements.get(i)) ?
+                    addLineEnd(out, elements.get(i), onlyConditionals) : elements.get(i);
+            out.add(element);
+            if (element instanceof LineBreak) {
+                onlyConditionals = true;
+            } else if (!(element instanceof ConditionalBlock)) {
+                onlyConditionals = false;
+            }
+        }
+        return out;
+    }
+
+    // writes the line end before the element of the next line and returns that element, padded when it is a conditional block
+    private Element addLineEnd(final List<Element> out, final Element element, final boolean onlyConditionals) {
+        if (onlyConditionals && out.get(out.size() - 1) instanceof ConditionalBlock before) {
+            out.set(out.size() - 1, withLineEnd(before, false));
+            return element;
+        }
+        if (element instanceof ConditionalBlock block) {
+            return withLineEnd(block, true);
+        }
+        out.add(new Text(List.of(), " ", Map.of()));
+        return element;
+    }
+
+    private boolean needsLineEnd(final Element before, final Element after) {
+        return !(before instanceof LineBreak) && isInlineOrConditional(before) && isInlineOrConditional(after) &&
+                !(isPlainText(before) && isPlainText(after)) &&
+                !(before instanceof Text b && !b.value().isEmpty() && Character.isWhitespace(b.value().charAt(b.value().length() - 1))) &&
+                !(after instanceof Text a && !a.value().isEmpty() && Character.isWhitespace(a.value().charAt(0)));
+    }
+
+    // the text is already parsed, so the padded one is a plain Text and not a newText() which reads [[id]] anchors again
+    private ConditionalBlock withLineEnd(final ConditionalBlock block, final boolean atStart) {
+        final var children = block.children();
+        final List<Element> withSpace;
+        if (children.isEmpty()) {
+            withSpace = children;
+        } else {
+            final int index = atStart ? 0 : children.size() - 1;
+            withSpace = new ArrayList<>(children.size() + 1);
+            withSpace.addAll(children);
+            if (isPlainText(children.get(index))) {
+                final var value = ((Text) children.get(index)).value();
+                withSpace.set(index, new Text(List.of(), atStart ? " " + value : value + " ", Map.of()));
+            } else {
+                withSpace.add(atStart ? 0 : withSpace.size(), new Text(List.of(), " ", Map.of()));
+            }
+        }
+        final List<ConditionalBlock> elseBranches;
+        if (block.elseBranches() == null) {
+            elseBranches = null;
+        } else {
+            elseBranches = new ArrayList<>(block.elseBranches().size());
+            for (final var branch : block.elseBranches()) {
+                elseBranches.add(withLineEnd(branch, atStart));
+            }
+        }
+        return new ConditionalBlock(block.evaluator(), withSpace, elseBranches, block.options());
+    }
+
+    private boolean isPlainText(final Element element) {
+        return element instanceof Text t && t.style().isEmpty() && t.options().isEmpty();
+    }
+
+    // a conditional block is a line of the paragraph when each of its branches holds inline elements only
+    private boolean isInlineOrConditional(final Element element) {
+        return switch (element.type()) {
+            case TEXT, LINK, ANCHOR, ATTRIBUTE -> true;
+            case CODE -> ((Code) element).inline();
+            case MACRO -> ((Macro) element).inline();
+            case CONDITIONAL_BLOCK -> isInlineBranches((ConditionalBlock) element);
+            default -> false;
+        };
+    }
+
+    private boolean isInlineBranches(final ConditionalBlock block) {
+        for (final var child : block.children()) {
+            if (!isInlineOrConditional(child)) {
+                return false;
+            }
+        }
+        if (block.elseBranches() != null) {
+            for (final var branch : block.elseBranches()) {
+                if (!isInlineBranches(branch)) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     // the content of a conditional block is parsed as blocks, so a line of several inline elements is a Paragraph: when the
@@ -3754,8 +3861,8 @@ public class Parser {
         final var out = new ArrayList<Element>(elements.size() + 1);
         final var buffer = new ArrayList<Text>(2);
         for (final var elt : elements) {
-            if (elt instanceof Text t && t.style().isEmpty() && t.options().isEmpty()) {
-                buffer.add(t);
+            if (isPlainText(elt)) {
+                buffer.add((Text) elt);
             } else {
                 if (!buffer.isEmpty()) {
                     out.add(mergeTexts(buffer));

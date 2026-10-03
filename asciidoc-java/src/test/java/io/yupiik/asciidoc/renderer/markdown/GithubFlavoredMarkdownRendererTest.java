@@ -513,6 +513,124 @@ class GithubFlavoredMarkdownRendererTest {
     }
 
     @Test
+    void conditionalParagraphStaysAParagraph() { // blank lines around the directives keep the paragraphs apart, as asciidoctor
+        final var document = """
+                ifdef::foo[]
+                Para one.
+
+                Para two.
+                endif::[]
+
+                [cols="1"]
+                |===
+                a|Cell para one.
+
+                ifdef::foo[]
+                Cell para two.
+                endif::[]
+
+                Cell para three.
+                |===
+
+                [NOTE]
+                ====
+                First para.
+
+                ifdef::foo[]
+                Second para.
+
+                Third para.
+                endif::[]
+                ====
+
+                First line +
+                *bold* line
+                ifdef::foo[]
+                cond
+                endif::[]
+
+                Next paragraph.
+                """;
+        assertEquals("""
+                        Para one.
+
+                        Para two.
+
+                        | Cell para one.<br><br>Cell para two.<br><br>Cell para three. |
+                        | --- |
+
+                        > [!NOTE]
+                        > First para.
+                        >
+                        > Second para.
+                        >
+                        > Third para.
+
+                        First line\\
+                        **bold** line cond
+
+                        Next paragraph.
+                        """,
+                md(document, Map.of("foo", "")));
+        assertEquals("""
+                        | Cell para one.<br><br>Cell para three. |
+                        | --- |
+
+                        > [!NOTE]
+                        > First para.
+
+                        First line\\
+                        **bold** line
+
+                        Next paragraph.
+                        """,
+                md(document));
+    }
+
+    @Test
+    void lineEndNextToAnInlineElement() { // a line that starts or ends with code, bold text or a link keeps its line end
+        final var document = """
+                The connector converts incoming messages into `Message<T>` instances.
+                `T` depends on the content type.
+                This enables exact assertions with `isEqualTo()`
+                instead of fuzzy matching, and *bold*
+                text, see link:https://example.com[the site]
+                and xref:other.adoc[other]
+                pages.
+
+                * item
+                ifdef::foo[]
+                line a
+                `code`
+                endif::[]
+                after.
+
+                first line
+                ifdef::foo[]
+                conditional line
+                else::[]
+                `other` line
+                endif::[]
+                last line
+                """;
+        final var lines = "The connector converts incoming messages into `Message<T>` instances. `T` depends on the content type." +
+                " This enables exact assertions with `isEqualTo()` instead of fuzzy matching, and **bold** text," +
+                " see [the site](https://example.com) and [other](other.md) pages.\n\n";
+        assertEquals(lines + """
+                        - item line a `code` after.
+
+                        first line conditional line last line
+                        """,
+                md(document, Map.of("foo", "")));
+        assertEquals(lines + """
+                        - item after.
+
+                        first line `other` line last line
+                        """,
+                md(document));
+    }
+
+    @Test
     void passthroughHorizontalRuleAndKbd() {
         assertEquals("<b>raw html</b>\n\n---\n\nPress <kbd>Ctrl</kbd>+<kbd>C</kbd> now.\n", md("""
                 ++++

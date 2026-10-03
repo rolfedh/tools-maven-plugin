@@ -804,7 +804,7 @@ class AsciidoctorLikeHtmlRendererTest {
     }
 
     @Test
-    void conditionalBlockInAParagraph() { // the directive lines were line feeds around the content, they stay whatever the neighbours
+    void conditionalBlockInAParagraph() { // the directive lines were line ends around the content, the parser keeps them as spaces
         assertRenderingContent("""
                         :foo:
 
@@ -815,9 +815,7 @@ class AsciidoctorLikeHtmlRendererTest {
                         """,
                 """
                          <div class="paragraph">
-                         <p>
-                        conditional line
-                        following line</p>
+                         <p>conditional line following line</p>
                          </div>
                         """);
         assertRenderingContent("""
@@ -841,9 +839,7 @@ class AsciidoctorLikeHtmlRendererTest {
                         """,
                 """
                          <div class="paragraph">
-                         <p>first line
-                        conditional line
-                        </p>
+                         <p>first line conditional line</p>
                          </div>
                         """);
         assertRenderingContent("""
@@ -865,9 +861,7 @@ class AsciidoctorLikeHtmlRendererTest {
                         """,
                 """
                          <div class="paragraph">
-                         <p>
-                        Only with foo.
-                        Always there.</p>
+                         <p>Only with foo. Always there.</p>
                          </div>
                         """);
         assertRenderingContent("""
@@ -911,10 +905,8 @@ class AsciidoctorLikeHtmlRendererTest {
                          </div>
                          </div>
                          <div class="paragraph">
-                         <p>The framework provides mechanisms.
-                        You can also use  <a href="other.html#x">mechanisms</a>
-                        , such as WebAuthn.
-                        Mechanisms depend on  <a href="idp.html">providers</a>
+                         <p>The framework provides mechanisms. You can also use  <a href="other.html#x">mechanisms</a>
+                        , such as WebAuthn. Mechanisms depend on  <a href="idp.html">providers</a>
                         .</p>
                          </div>
                          </div>
@@ -950,15 +942,56 @@ class AsciidoctorLikeHtmlRendererTest {
                          </div>
                          </div>
                          <div class="paragraph">
-                         <p>The framework provides mechanisms.
-                        You can also use  <a href="other.html#x">mechanisms</a>
-                        , such as OIDC.
-                        Mechanisms depend on  <a href="idp.html">providers</a>
+                         <p>The framework provides mechanisms. You can also use  <a href="other.html#x">mechanisms</a>
+                        , such as OIDC. Mechanisms depend on  <a href="idp.html">providers</a>
                         .</p>
                          </div>
                          </div>
                          </div>
                         """);
+    }
+
+    @Test
+    void lineEndNextToAnInlineElement() { // a line that starts or ends with code, bold text or a link keeps its line end
+        assertRenderingContent("""
+                        The connector converts incoming messages into `Message<T>` instances.
+                        `T` depends on the content type.
+                        This enables exact assertions with `isEqualTo()`
+                        instead of fuzzy matching, and *bold*
+                        text, see link:https://example.com[the site]
+                        and xref:other.adoc[other]
+                        pages.
+                        """,
+                """
+                         <div class="paragraph">
+                         <p>The connector converts incoming messages into <code>Message&lt;T&gt;</code> instances. <code>T</code> depends on the content type. This enables exact assertions with <code>isEqualTo()</code> instead of fuzzy matching, and <strong>bold</strong> text, see  <a href="https://example.com">the site</a>
+                         and  <a href="other.html">other</a>
+                         pages.</p>
+                         </div>
+                        """);
+    }
+
+    @Test
+    void conditionalBlocksOpeningAParagraph() { // a branch that renders nothing leaves no space at the start of the paragraph
+        final var document = """
+                ifndef::foo[]
+                A
+                endif::[]
+                ifdef::foo[]
+                B
+                endif::[]
+                c
+                """;
+        assertRenderingContent(":foo:\n\n" + document, """
+                 <div class="paragraph">
+                 <p>B c</p>
+                 </div>
+                """);
+        assertRenderingContent(document, """
+                 <div class="paragraph">
+                 <p>A c</p>
+                 </div>
+                """);
     }
 
     @Test
