@@ -53,6 +53,18 @@ import static java.util.stream.Collectors.joining;
  * from the {@link ConditionalBlock.Context} the visitor passes, see {@link VisitorState#context()}.
  */
 public class VisitorSibling {
+    // asciidoctor's INTRINSIC_ATTRIBUTES, with its values
+    private static final Map<String, String> INTRINSIC_ATTRIBUTES = Map.ofEntries(
+            Map.entry("startsb", "["), Map.entry("endsb", "]"), Map.entry("vbar", "|"), Map.entry("caret", "^"),
+            Map.entry("asterisk", "*"), Map.entry("tilde", "~"), Map.entry("plus", "&#43;"), Map.entry("backslash", "\\"),
+            Map.entry("backtick", "`"), Map.entry("blank", ""), Map.entry("empty", ""), Map.entry("sp", " "),
+            Map.entry("two-colons", "::"), Map.entry("two-semicolons", ";;"), Map.entry("nbsp", "&#160;"),
+            Map.entry("deg", "&#176;"), Map.entry("zwsp", "&#8203;"), Map.entry("quot", "&#34;"), Map.entry("apos", "&#39;"),
+            Map.entry("lsquo", "&#8216;"), Map.entry("rsquo", "&#8217;"), Map.entry("ldquo", "&#8220;"),
+            Map.entry("rdquo", "&#8221;"), Map.entry("wj", "&#8288;"), Map.entry("brvbar", "&#166;"),
+            Map.entry("pp", "&#43;&#43;"), Map.entry("cpp", "C&#43;&#43;"), Map.entry("amp", "&"), Map.entry("lt", "<"),
+            Map.entry("gt", ">"));
+
     // ------------------------------------------------------------------------------------------------------- options
 
     /**
@@ -326,10 +338,56 @@ public class VisitorSibling {
     }
 
     /**
-     * @return the id asciidoctor gives a section without an explicit one, built as the HTML renderer builds it.
+     * The HTML and Markdown renderers, their tables of contents and {@link VisitorState} all read the id here, so a link
+     * to a section points at the id its heading gets.
+     *
+     * @return the id asciidoctor gives a section without an explicit one, built from {@link #idText(Element, ConditionalBlock.Context)}.
      */
     public String generatedId(final Element title, final ConditionalBlock.Context context) {
-        return IdGenerator.forTitle(plainText(title, context).strip(), context.attribute("idprefix"), context.attribute("idseparator"));
+        return IdGenerator.forTitle(idText(title, context).strip(), context.attribute("idprefix"), context.attribute("idseparator"));
+    }
+
+    /**
+     * @return the text of a title as asciidoctor's converted title gives it to its id rule: the plain text with
+     * {@code <} and {@code >} as character references, so {@code Uni<T>} keeps its {@code T}; the content of a
+     * {@code pass:[]} macro and the value of an attribute as they are, since asciidoctor inserts them without escaping;
+     * and, for an attribute the document does not define, the value asciidoctor gives its built-in attributes such as
+     * {@code {plus}}, see {@link #intrinsicAttribute(String)}.
+     */
+    public String idText(final Element element, final ConditionalBlock.Context context) {
+        if (element == null) {
+            return "";
+        }
+        return switch (element.type()) {
+            case PARAGRAPH -> ((Paragraph) element).children().stream().map(it -> idText(it, context)).collect(joining());
+            case ATTRIBUTE -> {
+                final var name = ((Attribute) element).attribute();
+                if (context.attribute(name) != null) {
+                    yield plainText(element, context);
+                }
+                final var intrinsic = intrinsicAttribute(name);
+                yield intrinsic != null ? intrinsic : plainText(element, context);
+            }
+            case MACRO -> "pass".equals(((Macro) element).name()) ?
+                    plainText(element, context) : withCharacterReferences(plainText(element, context));
+            default -> withCharacterReferences(plainText(element, context));
+        };
+    }
+
+    /**
+     * @return the value asciidoctor gives one of its built-in attributes, such as {@code &#43;} for {@code plus}, or
+     * {@code null} for another name; a document that defines the attribute overrides it.
+     */
+    public String intrinsicAttribute(final String name) {
+        return INTRINSIC_ATTRIBUTES.get(name);
+    }
+
+    /**
+     * @return the text with {@code <} and {@code >} written as character references, as asciidoctor escapes them in a
+     * title before it builds the id.
+     */
+    protected String withCharacterReferences(final String text) {
+        return text.indexOf('<') >= 0 || text.indexOf('>') >= 0 ? text.replace("<", "&lt;").replace(">", "&gt;") : text;
     }
 
     /**

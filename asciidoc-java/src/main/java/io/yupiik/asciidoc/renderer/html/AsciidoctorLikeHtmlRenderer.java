@@ -15,7 +15,6 @@
  */
 package io.yupiik.asciidoc.renderer.html;
 
-import io.yupiik.asciidoc.renderer.IdGenerator;
 import io.yupiik.asciidoc.model.Admonition;
 import io.yupiik.asciidoc.model.Anchor;
 import io.yupiik.asciidoc.model.Attribute;
@@ -555,14 +554,7 @@ public class AsciidoctorLikeHtmlRenderer implements Visitor<String> {
             final var sectionStyle = element.options().get("");
             final var explicitId = element.options().get("id");
             final boolean hasExplicitId = explicitId != null && !explicitId.isBlank();
-            final String id;
-            if (!hasExplicitId) {
-                final var prefix = docAttrs.getOrDefault("idprefix", configuration.getAttributes().get("idprefix"));
-                final var separator = docAttrs.getOrDefault("idseparator", configuration.getAttributes().get("idseparator"));
-                id = IdGenerator.forTitle(title, prefix, separator);
-            } else {
-                id = explicitId;
-            }
+            final var id = sibling.sectionId(element.options(), element.title(), context());
             final var sectanchors = attr("sectanchors", docAttrs);
             if (sectanchors != null) {
                 final var anchor = "<a class=\"anchor\" href=\"#" + id + "\"></a>";
@@ -1510,8 +1502,7 @@ public class AsciidoctorLikeHtmlRenderer implements Visitor<String> {
         if (tocTitle != null && !tocTitle.isBlank()) {
             builder.append("  <div id=\"toctitle\">").append(tocTitle).append("</div>\n");
         }
-        final var docAttrs = state.document().header().attributes();
-        final var toc = new TocVisitor(toclevels, 1, docAttrs.get("idprefix"), docAttrs.get("idseparator"));
+        final var toc = new TocVisitor(sibling, context(), toclevels, 1);
         toc.visitBody(body);
         builder.append(toc.result());
         builder.append(" </div>\n");

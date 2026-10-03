@@ -93,6 +93,26 @@ class VisitorSiblingTest { // the options come from the parser, so a change of t
     }
 
     @Test
+    void generatedIdReadsTheTitleAsAsciidoctorConvertsIt() { // the ids of the map are the ones asciidoctor 2.0.26 writes
+        final var sibling = new VisitorSibling();
+        final ConditionalBlock.Context none = key -> null;
+        for (final var expected : Map.of(
+                "Using `Uni<T>` type", "_using_unit_type",
+                "Pass pass:[<b>bold</b>] here", "_pass_bold_here",
+                "Plus{plus}Plus and E{empty}F", "_plusplus_and_ef",
+                "A{sp}B", "_a_b",
+                "A{nbsp}B", "_ab",
+                "{cpp} guide", "_c_guide",
+                "Use {undefined} here", "_use_undefined_here").entrySet()) {
+            final var section = (Section) new Parser().parse("= Doc\n\n== " + expected.getKey() + "\n", new Parser.ParserContext(null))
+                    .body().children().get(0);
+            assertEquals(expected.getValue(), sibling.generatedId(section.title(), none), expected.getKey());
+        }
+        final var defined = (Section) new Parser().parse("= Doc\n\n== Plus{plus}here\n", new Parser.ParserContext(null)).body().children().get(0);
+        assertEquals("_plus_and_here", sibling.generatedId(defined.title(), key -> "plus".equals(key) ? " and " : null));
+    }
+
+    @Test
     void macroSource() { // what the HTML renderer writes for a macro it does not know
         assertEquals("tooltip:foo[a hint,role=x]",
                 sibling.macroSource(new Macro("tooltip", "foo", Map.of("", "a hint", "role", "x"), true)));

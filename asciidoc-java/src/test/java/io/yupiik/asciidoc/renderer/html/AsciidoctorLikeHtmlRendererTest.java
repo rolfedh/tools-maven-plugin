@@ -426,7 +426,7 @@ class AsciidoctorLikeHtmlRendererTest {
                         content""",
                 """
                  <div class="sect1">
-                  <h2 id="my-section_title">Section Title</h2>
+                  <h2 id="my_section_title">Section Title</h2>
                  <div class="sectionbody">
                  <div class="paragraph">
                  <p>
@@ -530,7 +530,7 @@ class AsciidoctorLikeHtmlRendererTest {
                         content""",
                 """
                  <div class="sect1">
-                  <h2 id="_sectiontitle">Section Title</h2>
+                  <h2 id="_section-title">Section Title</h2>
                  <div class="sectionbody">
                  <div class="paragraph">
                  <p>
@@ -553,7 +553,7 @@ class AsciidoctorLikeHtmlRendererTest {
                         content""",
                 """
                  <div class="sect1">
-                  <h2 id="sectiontitle">Section Title</h2>
+                  <h2 id="section-title">Section Title</h2>
                  <div class="sectionbody">
                  <div class="paragraph">
                  <p>
@@ -563,6 +563,147 @@ class AsciidoctorLikeHtmlRendererTest {
                  </div>
                  </div>
                 """);
+    }
+
+    @Test
+    void idSeparatorAsInTheQuarkusGuides() { // each quarkus.io guide includes an empty idprefix and idseparator -
+        assertRenderingContent("""
+                        :idprefix:
+                        :idseparator: -
+
+                        == Vert.x and the Getting-started guide
+
+                        See <<café-société>> and <<using-unit>>.
+
+                        == Café Société
+
+                        Text.
+
+                        == Using `Uni<T>`
+
+                        Text.""",
+                """
+                 <div class="sect1">
+                  <h2 id="vert-x-and-the-getting-started-guide">Vert.x and the Getting-started guide</h2>
+                 <div class="sectionbody">
+                 <div class="paragraph">
+                See  <a href="#café-société">Caf&eacute; Soci&eacute;t&eacute;</a>
+                 and  <a href="#using-unit">Using Uni&lt;T&gt;</a>
+                . </div>
+                 </div>
+                 </div>
+                 <div class="sect1">
+                  <h2 id="café-société">Caf&eacute; Soci&eacute;t&eacute;</h2>
+                 <div class="sectionbody">
+                 <div class="paragraph">
+                 <p>
+                Text.
+                 </p>
+                 </div>
+                 </div>
+                 </div>
+                 <div class="sect1">
+                  <h2 id="using-unit">Using <code>Uni&lt;T&gt;</code></h2>
+                 <div class="sectionbody">
+                 <div class="paragraph">
+                 <p>
+                Text.
+                 </p>
+                 </div>
+                 </div>
+                 </div>
+                """);
+    }
+
+    @Test
+    void emptyIdSeparatorOnlyRemovesTheSpaces() {
+        assertRenderingContent("""
+                        :idseparator:
+
+                        == Version 1.2.3
+
+                        content""",
+                """
+                 <div class="sect1">
+                  <h2 id="_version1.2.3">Version 1.2.3</h2>
+                 <div class="sectionbody">
+                 <div class="paragraph">
+                 <p>
+                content
+                 </p>
+                 </div>
+                 </div>
+                 </div>
+                """);
+    }
+
+    @Test
+    void sectionNumberAndTableOfContentsKeepTheSectionId() {
+        assertRendering("""
+                        = Doc
+                        :sectnums:
+                        :toc:
+                        :idprefix:
+                        :idseparator: -
+
+                        == First
+
+                        See <<sub-part>>.
+
+                        === Sub part
+
+                        Text.
+                        """,
+                """
+                        <!DOCTYPE html>
+                        <html lang="en">
+                        <head>
+                         <meta charset="UTF-8">
+                         <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                         <meta name="generator" content="Asciidoctor ">
+                         <title>Doc</title>
+                        </head>
+                        <body class="article">
+                         <div id="header">
+                         <h1>Doc</h1>
+                         <div id="toc" class="toc">
+                          <div id="toctitle">Table of Contents</div>
+                         <ul class="sectlevel1">
+                         <li><a href="#first">First</a>
+                         <ul class="sectlevel2">
+                         <li><a href="#sub-part">Sub part</a></li>
+                         </ul>
+                         </li>
+                         </ul>
+                         </div>
+                         </div>
+                         <div id="content">
+                         <div class="sect1">
+                          <h2 id="first">1. First</h2>
+                         <div class="sectionbody">
+                         <div class="paragraph">
+                        See  <a href="#sub-part">Sub part</a>
+                        . </div>
+                         <div class="sect2">
+                          <h3 id="sub-part">1.1. Sub part</h3>
+                         <div class="sectionbody">
+                         <div class="paragraph">
+                         <p>
+                        Text.
+                         </p>
+                         </div>
+                         </div>
+                         </div>
+                         </div>
+                         </div>
+                         </div>
+                         <div id="footer">
+                          <div id="footer-text">
+                          </div>
+                         </div>
+                        </body>
+                        </html>
+                        """);
     }
 
     @Test
@@ -2011,7 +2152,7 @@ class AsciidoctorLikeHtmlRendererTest {
                                 
                 foo""", """
                  <div class="sect1">
-                  <h2 id="_title__foo_barjson">Title :: foo <code>bar.json</code></h2>
+                  <h2 id="_title_foo_bar_json">Title :: foo <code>bar.json</code></h2>
                  <div class="sectionbody">
                  <div class="paragraph">
                  <p>
@@ -2151,7 +2292,7 @@ class AsciidoctorLikeHtmlRendererTest {
                         "== io.yupiik.test.MyObject\n",
                 """
                          <div class="sect0">
-                          <h1 id="_ioyupiiktestmyrootobject">io.yupiik.test.MyRootObject</h1>
+                          <h1 id="_io_yupiik_test_myrootobject">io.yupiik.test.MyRootObject</h1>
                          <div class="sectionbody">
                          <table class="tableblock frame-all grid-all stretch">
                           <caption class="title">io.yupiik.test.MyRootObject</caption>
