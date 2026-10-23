@@ -3,6 +3,7 @@
 :minisite-index-title: Asciidoc Java
 :minisite-index-icon: book
 :minisite-index-description: Asciidoc Java native parser.
+include::{partialsdir}/menu.adoc[]
 
 `asciidoc-java` is an AsciiDoc parser and two renderers written in plain Java, without JRuby.
 It reads a document into a model you can walk, then renders that model as the HTML asciidoctor writes or as GitHub-flavored Markdown.

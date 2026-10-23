@@ -1,0 +1,12 @@
+:minisite-menu-1: /parent.html
+:minisite-menu-1-icon: fa-book
+:minisite-menu-1-1: /child-a.html
+:minisite-menu-1-1-title: First
+:minisite-menu-1-2: /child-b.html
+:minisite-menu-1-2-icon: file
+:minisite-menu-2: /other#usage
+:minisite-menu-3: /api/index.html?v=2
+:minisite-menu-3-title: API
+:minisite-menu-3-icon: code
+:minisite-menu-4: https://github.com/yupiik/tools-maven-plugin
+:minisite-menu-4-title: GitHub

@@ -1,4 +1,5 @@
 = Minisite LLM Chat
+include::{partialsdir}/menu.adoc[]
 
 The `minisite` goal can embed a documentation assistant directly in the generated site.
 Once enabled, every page gets a chat widget able to answer questions about *your* documentation.

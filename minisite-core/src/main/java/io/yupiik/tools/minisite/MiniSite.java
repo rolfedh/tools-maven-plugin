@@ -55,6 +55,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.TreeMap;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -86,6 +87,18 @@ public class MiniSite implements Runnable {
     private final Pattern linkTitleReplacement = Pattern.compile("[\"\n]");
     private final Urlifier urlifier = new Urlifier();
     private final Handlebars handlebars;
+
+    /**
+     * Prefix of the page attributes defining its left menu: {@code minisite-menu-1} is the first entry, its value the path
+     * of the target from the site root ({@code /getting-started.html}), {@code minisite-menu-1-2} the second entry under it,
+     * {@code minisite-menu-1-title} and {@code minisite-menu-1-icon} the text and the icon of an entry.
+     */
+    public static final String MENU_ATTRIBUTE = "minisite-menu-";
+
+    /**
+     * Page attribute written before the path of each {@link #MENU_ATTRIBUTE} entry.
+     */
+    public static final String MENU_PREFIX_ATTRIBUTE = "minisite-left-menu-prefix";
 
     // default theme fragments shipped on classpath under yupiik-tools-maven-plugin/minisite/_partials/
     private static final List<String> DEFAULT_THEME_PARTIALS = List.of(
@@ -270,7 +283,10 @@ public class MiniSite implements Runnable {
     }
 
     protected String toIcon(final String i) {
-        return i.startsWith("fa") && i.contains(" ") ? i : ("fas fa-" + i);
+        if (i.startsWith("fa") && i.contains(" ")) { // fa fa-blog, fas fa-home: the classes as written
+            return i;
+        }
+        return i.startsWith("fa-") ? "fas " + i : "fas fa-" + i;
     }
 
     protected String getTitle(final Page it) {
@@ -286,11 +302,298 @@ public class MiniSite implements Runnable {
         return handlebars.render(template, Map.of("listItems", listItems));
     }
 
+    /**
+     * Builds the left menu of the pages defining it with {@link #MENU_ATTRIBUTE} attributes.
+     * A page without such attribute keeps the menu of {@link #leftMenu(Map)}, built from the {@code minisite-index} attributes.
+     *
+     * @param files the pages and their output file.
+     * @return the menu of each page defining one, by output file.
+     * @throws IllegalArgumentException when the entries of a page are not consistent, before any page is written.
+     */
+    protected Map<Path, String> leftMenus(final Map<Page, Path> files) {
+        final Path templatesDir = getTemplatesDir();
+        final String template = findPageTemplate(templatesDir, "left-menu");
+        final String itemTemplate = findPageTemplate(templatesDir, "left-menu-item");
+        final Map<String, Page> pagesByPath = new HashMap<>();
+        for (final Page page : files.keySet()) {
+            pagesByPath.put(page.relativePath, page);
+        }
+        final List<Map.Entry<Page, Path>> sortedFiles = new ArrayList<>(files.entrySet());
+        sortedFiles.sort(comparing(it -> it.getKey().relativePath)); // the page an error or the warning names does not depend on the map order
+        final Map<Map<String, String>, String> rendered = new HashMap<>(); // the pages including the same definition render it once
+        final Map<Path, String> menus = new HashMap<>();
+        final List<String> legacy = new ArrayList<>();
+        for (final Map.Entry<Page, Path> file : sortedFiles) {
+            final Page page = file.getKey();
+            final Map<String, String> definition = new TreeMap<>();
+            boolean hasEntry = false;
+            for (final Map.Entry<String, String> attribute : page.attributes.entrySet()) {
+                if (attribute.getKey().startsWith(MENU_ATTRIBUTE)) {
+                    definition.put(attribute.getKey(), attribute.getValue());
+                    hasEntry = true;
+                } else if (MENU_PREFIX_ATTRIBUTE.equals(attribute.getKey())) {
+                    definition.put(attribute.getKey(), attribute.getValue());
+                }
+            }
+            if (!hasEntry) { // a prefix alone, set for every page in the configuration for example, defines no menu
+                if (!isBlogPage(page)) { // blog pages have no left menu
+                    legacy.add(page.relativePath);
+                }
+                continue;
+            }
+            final String menu = rendered.computeIfAbsent(definition, it -> leftMenu(page, it, pagesByPath, template, itemTemplate));
+            menus.put(file.getValue().toAbsolutePath().normalize(), menu);
+        }
+        if (!legacy.isEmpty() && findIndexPages(files).findAny().isPresent()) {
+            configuration.getAsciidoctorConfiguration().warn().accept(
+                    "The left menu built from the minisite-index attributes is deprecated, define it with " +
+                            MENU_ATTRIBUTE + "<position> attributes in the header of each page, for example in an included file; " +
+                            legacy.size() + " page(s) have none, such as " + String.join(", ", legacy.subList(0, Math.min(3, legacy.size()))));
+        }
+        return menus;
+    }
+
+    /**
+     * Renders the left menu a page defines.
+     *
+     * @param page         the page, named in the error when the definition is not consistent.
+     * @param definition   its {@link #MENU_ATTRIBUTE} and {@link #MENU_PREFIX_ATTRIBUTE} attributes.
+     * @param pagesByPath  the pages of the site by path.
+     * @param template     the {@code left-menu} template.
+     * @param itemTemplate the {@code left-menu-item} template.
+     * @return the rendered menu.
+     */
+    protected String leftMenu(final Page page, final Map<String, String> definition, final Map<String, Page> pagesByPath,
+                              final String template, final String itemTemplate) {
+        final List<String> errors = new ArrayList<>();
+        final MenuEntry root = readMenuEntries(definition, errors);
+        final String configuredPrefix = ofNullable(definition.get(MENU_PREFIX_ATTRIBUTE)).map(String::strip).orElse("");
+        final String prefix = configuredPrefix.endsWith("/") ? configuredPrefix.substring(0, configuredPrefix.length() - 1) : configuredPrefix;
+        if (hasNestedEntries(root) && !itemTemplate.contains("{{{children}}}")) {
+            errors.add("the left-menu-item template does not write {{{children}}}");
+        }
+        validateMenuEntries(root, "", prefix, pagesByPath, errors);
+        if (!errors.isEmpty()) {
+            errors.sort(null);
+            throw new IllegalArgumentException("Invalid left menu of " + page.relativePath + ": " + String.join(", ", errors));
+        }
+        return handlebars.render(template, Map.of("listItems", toMenuItems(root, prefix, pagesByPath, itemTemplate, this::getIcon)));
+    }
+
+    /**
+     * Reads the {@link #MENU_ATTRIBUTE} attributes of a page as a tree: the segments of the name after the prefix are the
+     * positions, digits separated by dashes, and the last segment can be {@code title} or {@code icon} instead.
+     *
+     * @param attributes the attributes of the page.
+     * @param errors     receives the attribute names which do not have this form or name the position of another one.
+     * @return the root of the tree, its children are the top level entries.
+     */
+    private MenuEntry readMenuEntries(final Map<String, String> attributes, final List<String> errors) {
+        final MenuEntry root = new MenuEntry();
+        for (final Map.Entry<String, String> attribute : attributes.entrySet()) {
+            final String name = attribute.getKey();
+            if (!name.startsWith(MENU_ATTRIBUTE)) {
+                continue;
+            }
+            int from = MENU_ATTRIBUTE.length(); // start of the last segment once the leading positions are skipped
+            int dash = name.indexOf('-', from);
+            while (dash > from && isDigits(name, from, dash)) {
+                from = dash + 1;
+                dash = name.indexOf('-', from);
+            }
+            final String last = name.substring(from);
+            final boolean position = dash < 0 && isDigits(name, from, name.length());
+            final boolean field = dash < 0 && from > MENU_ATTRIBUTE.length() && ("title".equals(last) || "icon".equals(last));
+            if (!position && !field) {
+                errors.add(name + " is not a menu attribute, the form is " + MENU_ATTRIBUTE + "<number>[-<number>...][-title|-icon]");
+                continue;
+            }
+            MenuEntry entry = root;
+            for (int start = MENU_ATTRIBUTE.length(); start < from; ) {
+                final int end = name.indexOf('-', start);
+                entry = entry.children.computeIfAbsent(Integer.parseInt(name.substring(start, end)), k -> new MenuEntry());
+                start = end + 1;
+            }
+            if (position) {
+                final MenuEntry target = entry.children.computeIfAbsent(Integer.parseInt(last), k -> new MenuEntry());
+                if (target.target != null) { // 01 and 1 are the same position
+                    errors.add(name + " names the position of another attribute");
+                }
+                target.target = attribute.getValue();
+            } else if ("title".equals(last)) {
+                if (entry.title != null) {
+                    errors.add(name + " names the position of another attribute");
+                }
+                entry.title = attribute.getValue();
+            } else {
+                if (entry.icon != null) {
+                    errors.add(name + " names the position of another attribute");
+                }
+                entry.icon = attribute.getValue();
+            }
+        }
+        return root;
+    }
+
+    private boolean isDigits(final String value, final int from, final int to) {
+        if (from >= to || to - from > 9) { // at most 9 digits, so the position is an int
+            return false;
+        }
+        for (int i = from; i < to; i++) {
+            if (!Character.isDigit(value.charAt(i))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean hasNestedEntries(final MenuEntry root) {
+        for (final MenuEntry entry : root.children.values()) {
+            if (!entry.children.isEmpty()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void validateMenuEntries(final MenuEntry parent, final String position, final String prefix,
+                                     final Map<String, Page> pagesByPath, final List<String> errors) {
+        for (final Map.Entry<Integer, MenuEntry> child : parent.children.entrySet()) {
+            final String name = MENU_ATTRIBUTE + position + child.getKey();
+            final MenuEntry entry = child.getValue();
+            if (entry.target == null) {
+                errors.add(name + " is missing but its title, icon or child entries are set");
+            } else if (entry.target.isBlank()) {
+                errors.add(name + " is empty");
+            } else if (entry.title == null) {
+                final String path = toMenuPath(prefix, entry.target, pagesByPath);
+                if (findMenuPage(path, pagesByPath) == null) {
+                    errors.add(name + "-title is required since " + path + " is not a page of the content folder");
+                }
+            } else if (entry.title.isBlank()) {
+                errors.add(name + "-title is empty");
+            }
+            if (entry.icon != null && entry.icon.isBlank()) {
+                errors.add(name + "-icon is empty");
+            }
+            validateMenuEntries(entry, position + child.getKey() + '-', prefix, pagesByPath, errors);
+        }
+    }
+
+    /**
+     * @param defaultIcon the icon of an entry without {@code -icon}: the icon of its page at the top level, none below.
+     */
+    private String toMenuItems(final MenuEntry parent, final String prefix, final Map<String, Page> pagesByPath,
+                               final String template, final Function<Page, String> defaultIcon) {
+        final StringBuilder items = new StringBuilder();
+        for (final MenuEntry entry : parent.children.values()) {
+            final String path = toMenuPath(prefix, entry.target, pagesByPath);
+            final Page target = findMenuPage(path, pagesByPath);
+            final String text = entry.title != null ? entry.title : getTitle(target);
+            final Page page = target != null ? target : new Page(path, text, Map.of(), null);
+            final String icon = entry.icon != null ? toIcon(entry.icon) : defaultIcon.apply(page);
+            final String children = entry.children.isEmpty() ? "" : "<ul>\n" + toMenuItems(entry, prefix, pagesByPath, template, it -> "") + "</ul>\n";
+            final String href = isUri(path) ? path : configuration.getSiteBase() + path;
+            items.append(toMenuItem(page, href, text, icon, children, template));
+        }
+        return items.toString();
+    }
+
+    /**
+     * @param prefix      the {@link #MENU_PREFIX_ATTRIBUTE} value, or an empty string.
+     * @param target      the value of a {@link #MENU_ATTRIBUTE} entry.
+     * @param pagesByPath the pages of the site by path.
+     * @return the path of the entry from the site root, with the leading slash of the {@link Page} paths: the path of the page
+     * it names, also tried with {@code .html} appended ({@code /getting-started} names {@code /getting-started.html}), else the
+     * path as written.
+     */
+    protected String toMenuPath(final String prefix, final String target, final Map<String, Page> pagesByPath) {
+        final String stripped = target.strip();
+        if (isUri(stripped)) { // an absolute URL is linked as written
+            return stripped;
+        }
+        final int end = findFragmentOrQuery(stripped); // a fragment or a query stays in the link, the page is the part before it
+        final String file = end < 0 ? stripped : stripped.substring(0, end);
+        final String suffix = end < 0 ? "" : stripped.substring(end);
+        final String path = prefix + (file.startsWith("/") ? file : '/' + file);
+        final String fromRoot = path.startsWith("/") ? path : '/' + path;
+        if (pagesByPath.get(fromRoot) == null && pagesByPath.get(fromRoot + ".html") != null) {
+            return fromRoot + ".html" + suffix;
+        }
+        return fromRoot + suffix;
+    }
+
+    /**
+     * @param path        a path from {@link #toMenuPath(String, String, Map)}.
+     * @param pagesByPath the pages of the site by path.
+     * @return the page the path names, without its fragment or query, or {@code null}.
+     */
+    protected Page findMenuPage(final String path, final Map<String, Page> pagesByPath) {
+        final int end = findFragmentOrQuery(path);
+        return pagesByPath.get(end < 0 ? path : path.substring(0, end));
+    }
+
+    /**
+     * @param value a menu entry value or path.
+     * @return the index of its first {@code #} or {@code ?}, or {@code -1}.
+     */
+    protected int findFragmentOrQuery(final String value) {
+        final int fragment = value.indexOf('#');
+        final int query = value.indexOf('?');
+        return query >= 0 && (fragment < 0 || query < fragment) ? query : fragment;
+    }
+
+    /**
+     * Asciidoctor's {@code Helpers.uriish?}, as {@code VisitorSibling.isUri} of asciidoc-java reads it: an ASCII letter, at
+     * least one more ASCII letter, digit, {@code .}, {@code +} or {@code -}, then a colon, the scheme being at most 32
+     * characters. It is written here again because asciidoc-java is a provided dependency, absent when a site renders
+     * with asciidoctor only.
+     *
+     * @param value a menu entry value.
+     * @return true when the value is an absolute URL such as {@code https://yupiik.io} or {@code mailto:dev@yupiik.com}.
+     */
+    protected boolean isUri(final String value) {
+        final int colon = value.indexOf(':');
+        if (colon < 2 || colon > 32 || !isAsciiLetter(value.charAt(0))) {
+            return false;
+        }
+        for (int i = 1; i < colon; i++) {
+            final char c = value.charAt(i);
+            if (!isAsciiLetter(c) && (c < '0' || c > '9') && c != '.' && c != '+' && c != '-') {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean isAsciiLetter(final char c) {
+        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+    }
+
     protected String toMenuItem(final Path output, final Map.Entry<Page, Path> it, final String template) {
-        final Map<String, Object> model = buildInterpolationModel(it.getKey(), null, null, k -> null);
-        model.put("title", toLinkTitle(it.getKey()));
-        model.put("text", getTitle(it.getKey()));
-        model.put("href", configuration.getSiteBase() + '/' + output.relativize(it.getValue()));
+        final Page page = it.getKey();
+        return toMenuItem(page, configuration.getSiteBase() + '/' + output.relativize(it.getValue()), getTitle(page), getIcon(page), "", template);
+    }
+
+    /**
+     * Renders one entry of the left menu.
+     *
+     * @param page     the page the entry links to, or a page holding the path and the text when the target is not a rendered page.
+     * @param href     the link.
+     * @param text     the text of the link.
+     * @param icon     the icon classes.
+     * @param children the nested list of the entries under this one, already rendered, or an empty string.
+     * @param template the {@code left-menu-item} template.
+     * @return the rendered entry.
+     */
+    protected String toMenuItem(final Page page, final String href, final String text, final String icon,
+                                final String children, final String template) {
+        final Map<String, Object> model = buildInterpolationModel(page, null, null, k -> null);
+        model.put("title", toLinkTitle(page));
+        model.put("text", text);
+        model.put("href", href);
+        model.put("icon", icon);
+        model.put("children", children);
         return handlebars.render(template, model);
     }
 
@@ -634,11 +937,15 @@ public class MiniSite implements Runnable {
         Function<Page, String> template = null;
         boolean hasBlog = false;
         List<String> categories = emptyList();
+        final Map<Path, String> leftMenus = new HashMap<>();
         if (Files.exists(content)) {
             final List<BlogPage> blog = new ArrayList<>();
             final List<Consumer<Function<Page, String>>> pageToRender = new ArrayList<Consumer<Function<Page, String>>>();
             final Function<Page, String> footerNavTemplate = loadNavTemplates();
             pages.forEach(page -> pageToRender.add(onVisitedFile(page, asciidoctor, options, files, now, blog, footerNavTemplate)));
+            if (configuration.isTemplateAddLeftMenu()) { // before any page is written since an invalid menu fails the generation
+                leftMenus.putAll(leftMenus(files));
+            }
             hasBlog = (!blog.isEmpty() && configuration.isGenerateBlog());
             template = createTemplate(options, asciidoctor, hasBlog);
             final Function<Page, String> tpl = template;
@@ -667,7 +974,7 @@ public class MiniSite implements Runnable {
             }
         }
         if (configuration.isTemplateAddLeftMenu()) {
-            final String leftMenu = leftMenu(files);
+            final String leftMenu = leftMenu(files); // the pages without their own menu, and the files which are not pages
             try {
                 Files.walkFileTree(output, new SimpleFileVisitor<Path>() {
                     @Override
@@ -677,7 +984,7 @@ public class MiniSite implements Runnable {
                             final int toReplace = lines.indexOf("<minisite-menu-placeholder/>");
                             if (toReplace >= 0) {
                                 configuration.getAsciidoctorConfiguration().debug().accept("Replacing left menu in " + file);
-                                lines.set(toReplace, leftMenu);
+                                lines.set(toReplace, leftMenus.getOrDefault(file.toAbsolutePath().normalize(), leftMenu));
                                 Files.write(file, lines);
                             }
                         }
@@ -1371,7 +1678,12 @@ public class MiniSite implements Runnable {
                         return FileVisitResult.CONTINUE;
                     }
                     final String contentString = Files.readString(file);
-                    final Asciidoc.AsciidocInstance.Header header = asciidoctor.header(contentString, options);
+                    final Asciidoc.AsciidocInstance.Header header;
+                    try {
+                        header = asciidoctor.header(contentString, options);
+                    } catch (final RuntimeException re) { // a missing header include for example, name the page
+                        throw new IllegalArgumentException("Can't read the header of " + file + ": " + re.getMessage(), re);
+                    }
                     final Path out = ofNullable(header.getAttributes().get("minisite-path"))
                             .map(it -> configuration.getTarget().resolve(it))
                             .orElseGet(() -> configuration.getTarget().resolve(content.relativize(file)).getParent().resolve(
@@ -1504,6 +1816,16 @@ public class MiniSite implements Runnable {
         private final String title;
         private final Map<String, String> attributes;
         private final String content;
+    }
+
+    /**
+     * One entry of a left menu defined with {@link #MENU_ATTRIBUTE} attributes, its children sorted by position.
+     */
+    private static class MenuEntry {
+        private final Map<Integer, MenuEntry> children = new TreeMap<>();
+        private String target;
+        private String title;
+        private String icon;
     }
 
     private static class NavLink {

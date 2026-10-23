@@ -1506,6 +1506,10 @@ public class Parser {
     // the include directive as asciidoctor's preprocessor reads it: `include::target[options]` is the whole line - trailing
     // spaces aside - and the target neither is empty nor starts or ends with a space, else the line is text and null is returned
     private Macro includeDirective(final String line, final Map<String, String> currentAttributes) {
+        return includeDirective(line, currentAttributes::get);
+    }
+
+    private Macro includeDirective(final String line, final Function<String, String> currentAttributes) {
         final var directive = line.stripTrailing();
         if (!directive.startsWith("include::") || !directive.endsWith("]")) {
             return null;
@@ -3721,18 +3725,15 @@ public class Parser {
                     rereadHoldingBranch(readConditional(directive.macro(), directive.enclosed(), reader, attributes), ctx, reader);
                     continue;
                 }
-                // simplistic macro handling for the include since we still are in headers,
-                // HEADER_MACRO guarantees the "::" and the trailing "[...]" so no need to guard the indexes
+                // an include without options is read as the body reads it, its target can reference the attributes read
+                // so far and the global ones ({partialsdir}); with a non-empty option list the header ends there, as before
                 final var stripped = line.strip();
-                final int sep = stripped.indexOf("::");
-                final int options = stripped.indexOf('[', sep);
-                final var macro = new Macro(
-                        stripped.substring(0, sep),
-                        stripped.substring(sep + "::".length(), options),
-                        Map.of(), false);
-                final var enclosed = stripped.substring(options + 1, stripped.length() - 1);
-                if ("include".equals(macro.name()) && !macro.label().isEmpty() && enclosed.isEmpty()) {
-                    doInclude(enclosingElement, macro, resolver, attributes, true);
+                final var include = stripped.startsWith("include::") ? includeDirective(stripped, name -> {
+                    final var local = attributes.get(name);
+                    return local != null ? local : knownAttributes.get(name);
+                }) : null;
+                if (include != null && include.options().isEmpty()) {
+                    doInclude(enclosingElement, include, resolver, attributes, true);
                     continue;
                 }
 

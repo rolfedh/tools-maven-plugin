@@ -1,0 +1,6 @@
+= Other
+:minisite-index: 200
+:minisite-index-icon: robot
+include::{partialsdir}/menu.adoc[]
+
+Another page.

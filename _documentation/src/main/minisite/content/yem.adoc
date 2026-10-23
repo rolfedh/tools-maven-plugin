@@ -3,6 +3,7 @@
 :minisite-index-title: YEM
 :minisite-index-icon: robot
 :minisite-index-description: Yupiik Environment manager
+include::{partialsdir}/menu.adoc[]
 
 [abstract]
 Setting up dev environment can be a nightmare.

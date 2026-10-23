@@ -62,9 +62,10 @@ public class YupiikAsciidoc implements Asciidoc {
     private static class Instance implements AsciidocInstance {
         @Override
         public Header header(final String content, final Object options) {
-            final var attributes = ((Options) options).attributes;
-            final io.yupiik.asciidoc.model.Header header = getOrCreateParser(attributes)
-                    .parseHeader(new Reader(List.of(content.split("\n")/*no Pattern - see fast-path branch in the impl*/)));
+            final Options opts = (Options) options;
+            final io.yupiik.asciidoc.model.Header header = getOrCreateParser(opts.attributes).parseHeader(
+                    new Reader(List.of(content.split("\n")/*no Pattern - see fast-path branch in the impl*/)),
+                    new Parser.ParserContext(ContentResolver.of(opts.base))); // the header can include a shared attributes file
             return new Header(header.title(), header.attributes());
         }
 

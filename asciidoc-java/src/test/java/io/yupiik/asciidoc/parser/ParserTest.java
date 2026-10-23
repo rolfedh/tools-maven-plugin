@@ -1591,6 +1591,29 @@ class ParserTest {
     }
 
     @Test
+    void headerIncludeWithAttributeInPath(@TempDir final Path work) throws IOException {
+        Files.writeString(work.resolve("menu.adoc"), ":minisite-menu-1: /a.html\n:minisite-menu-1-title: A\n");
+        final var context = new Parser.ParserContext(ContentResolver.of(work));
+        final var fromHeader = new Parser().parseHeader(
+                new Reader(List.of("= Title", ":partialsdir: " + work, "include::{partialsdir}/menu.adoc[]", ":after: yes")), context);
+        assertEquals("/a.html", fromHeader.attributes().get("minisite-menu-1"));
+        assertEquals("A", fromHeader.attributes().get("minisite-menu-1-title"));
+        assertEquals("yes", fromHeader.attributes().get("after")); // the header goes on after the included lines
+        final var fromGlobals = new Parser(Map.of("partialsdir", work.toString())).parseHeader(
+                new Reader(List.of("= Title", "include::{partialsdir}/menu.adoc[]")), context);
+        assertEquals("/a.html", fromGlobals.attributes().get("minisite-menu-1"));
+        assertEquals("A", fromGlobals.attributes().get("minisite-menu-1-title"));
+        final var withOptions = new Parser(Map.of("partialsdir", work.toString())).parseHeader( // the header ends there, as on master
+                new Reader(List.of("= Title", "include::{partialsdir}/menu.adoc[lines=1]", ":after: yes")), context);
+        assertNull(withOptions.attributes().get("minisite-menu-1"));
+        assertNull(withOptions.attributes().get("after"));
+        final var blankOptions = new Parser(Map.of("partialsdir", work.toString())).parseHeader( // [ ] is no option, as asciidoctor reads it
+                new Reader(List.of("= Title", "include::{partialsdir}/menu.adoc[ ]", ":after: yes")), context);
+        assertEquals("/a.html", blankOptions.attributes().get("minisite-menu-1"));
+        assertEquals("yes", blankOptions.attributes().get("after"));
+    }
+
+    @Test
     void codeAfterListContinuation() {
         final var body = new Parser().parseBody(new Reader(List.of("""
                 * foo

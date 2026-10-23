@@ -3,6 +3,7 @@
 :minisite-index-title: Maven
 :minisite-index-icon: building
 :minisite-index-description: Maven Plugin integration.
+include::{partialsdir}/menu.adoc[]
 
 To learn all goals available in the maven plugin read xref:mojo/yupiik-tools-maven-plugin.adoc[Yupiik Tools Maven Plugin] dedicated page.
 
@@ -309,6 +310,35 @@ TIP: ensure to not use `1`, `2`, `3`, ... but rather `100`, `200`, ... to easily
 * `minisite-index-title` attribute enables to override link text.
 * `minisite-index-icon` attribute enables to override font awesome icon (without `fa-` prefix).
 * `minisite-index-description` attribute enables to override the text in the index tile for the page entry.
+
+=== Left menu
+
+The left menu of a page is defined by its `minisite-menu-<position>` attributes, so each page declares the menu it shows.
+Write them in the page header or in a file the header includes: the attributes of the plugin configuration are page attributes with the Asciidoctor engine but not with the Yupiik engine, so only the page header gives the same menu with both engines.
+The common practice is to write the entries once in a file of `_partials` and to include it in the header of each page with `include::{partialsdir}/menu.adoc[]`, as the last line of the header; the shared file must not contain a blank line, which ends the header. The `minisite` goal does not define `partialsdir`, so set it in its `attributes` (for example `${project.basedir}/src/main/minisite/content/_partials`). A header include which cannot be read fails the generation with the Yupiik engine; with the Asciidoctor engine it is an error in the Asciidoctor log, the page keeps the `minisite-index` menu and the deprecation warning names it.
+The value of an entry is the path of its target from the site root, with or without the `.html` extension when it names a page, or an absolute URL (`https://...`), which is linked as written:
+
+[source,asciidoc]
+----
+:minisite-menu-1: /getting-started.html
+:minisite-menu-1-title: Getting Started
+:minisite-menu-1-icon: home
+:minisite-menu-1-1: /installation.html
+:minisite-menu-1-2: /configuration.html
+:minisite-menu-2: /guides.html
+----
+
+[options="header",cols="1,3"]
+|===
+|Attribute|Meaning
+|`minisite-menu-<n>`|A top level entry. `minisite-menu-<n>-<m>` is an entry under it, at any depth. The entries are sorted by position, so the numbers can have gaps.
+|`minisite-menu-<position>-title`|The text of the entry, by default the `minisite-index-title` attribute or the title of the target page; a `#fragment` or a `?query` stays in the link and the page before it gives the defaults. It is required when the value is not a page of the `content` folder (the generated `index.html` and blog pages included).
+|`minisite-menu-<position>-icon`|The font awesome icon of the entry (`home` or `fa-home`), by default the `minisite-index-icon` attribute of the target page for a top level entry; a nested entry has no icon unless this attribute sets one.
+|`minisite-left-menu-prefix`|Written before the path of each entry: with `/docs`, the entry `/getting-started.html` links to `/docs/getting-started.html`. Alone, without any entry, it defines no menu.
+|===
+
+An empty entry, title or icon, a title or an icon without its entry, a child entry without its parent entry, two attributes for the same position (`1` and `01`), an attribute which does not have this form, or a custom `left-menu-item.hb` template without `{{{children}}}` when entries are nested fails the generation before any page is written.
+A page without any `minisite-menu-` attribute shows the menu built from the `minisite-index` attributes of the pages, which is deprecated and logs a warning.
 
 === Theme and templates
 

@@ -3,6 +3,7 @@
 :minisite-index-title: Ascii2SVG
 :minisite-index-icon: font
 :minisite-index-description: Ascii diagram to SVG rendering.
+include::{partialsdir}/menu.adoc[]
 
 The module `ascii2svg` is a fork of the go https://github.com/asciitosvg/asciitosvg library rewritten in Java.
 It enables to convert a string graph in SVG.

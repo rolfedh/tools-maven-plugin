@@ -1,0 +1,4 @@
+= First child
+include::{partialsdir}/menu.adoc[]
+
+The first child.

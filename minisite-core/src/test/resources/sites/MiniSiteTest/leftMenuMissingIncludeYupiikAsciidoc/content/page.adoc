@@ -1,0 +1,4 @@
+= Page
+include::_partials/nope.adoc[]
+
+A page whose header include is missing.

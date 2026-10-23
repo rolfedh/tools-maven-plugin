@@ -1,0 +1,16 @@
+= Page
+:minisite-menu-1-title: One
+:minisite-menu-2:
+:minisite-menu-3: /missing.html
+:minisite-menu-4-color: red
+:minisite-menu-x: /x.html
+:minisite-menu-5: /page.html
+:minisite-menu-5-title:
+:minisite-menu-5-icon:
+:minisite-menu-06: /page.html
+:minisite-menu-6: /page.html
+:minisite-menu-06-title: Six
+:minisite-menu-6-title: Six
+:minisite-menu-9999999999: /page.html
+
+A page with invalid menu entries.

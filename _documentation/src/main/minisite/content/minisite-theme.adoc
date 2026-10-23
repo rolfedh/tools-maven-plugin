@@ -1,6 +1,7 @@
 = Minisite Theme
 :minisite-index-title: Theme
 :minisite-index-description: Customize the minisite look and feel with the default handlebars-based theme.
+include::{partialsdir}/menu.adoc[]
 
 The minisite default template is a documentation theme with a dark header and footer, a neutral background, a spacious reading column and rounded cards derived from the link:https://yupiik.com[yupiik.com] brand identity.
 It ships as a set of link:https://handlebarsjs.com/[handlebars]-like templates (`.hb` files) and a CSS variable-driven stylesheet supporting **light** and **dark** color schemes with a manual toggle.
@@ -47,7 +48,7 @@ The layout is composed of the following default templates:
 |`page-title.hb`|The page `<h1>` heading block.
 |`page-content.hb`|The main content column: breadcrumb, title and the `.page-content-body` that receives the rendered Asciidoctor content and the previous/next navigation.
 |`left-menu.hb`|Optional left navigation column rendered when the left menu is enabled.
-|`left-menu-item.hb`|Single entry of the left navigation.
+|`left-menu-item.hb`|Single entry of the left navigation; `{{{children}}}` writes, as a nested list, the entries under this one.
 |`index-item.hb`|One tile (card) of an automatically generated index page.
 |`index-content.hb`|The index page layout: heading, intro and the docs overview grid.
 |`page-footer-nav.hb`|Previous/next pagination navigation block.

@@ -1,0 +1,13 @@
+:minisite-menu-1: /mojos.html
+:minisite-menu-2: /cli.html
+:minisite-menu-3: /asciidoc-java.html
+:minisite-menu-3-1: /asciidoc-java-syntax.html
+:minisite-menu-3-1-title: Supported syntax
+:minisite-menu-3-2: /asciidoc-java-html.html
+:minisite-menu-3-2-title: HTML renderer
+:minisite-menu-3-3: /asciidoc-java-markdown.html
+:minisite-menu-3-3-title: Markdown renderer
+:minisite-menu-3-4: /asciidoc-java-model.html
+:minisite-menu-3-4-title: Model and visitors
+:minisite-menu-4: /ascii2svg.html
+:minisite-menu-5: /yem.html
