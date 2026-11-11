@@ -571,20 +571,24 @@ public class Parser {
     private List<Element> doParse(final Path enclosingDocument, final Reader reader, final Predicate<String> continueTest,
                                   final ContentResolver resolver, final Map<String, String> attributes,
                                   final boolean supportComplexStructures,
-                                  final boolean skipTitle) {
-        return doParse(enclosingDocument, reader, continueTest, resolver, attributes, supportComplexStructures, skipTitle, false);
+                                  final boolean firstLineIsText) {
+        return doParse(enclosingDocument, reader, continueTest, resolver, attributes, supportComplexStructures, firstLineIsText, false, null);
     }
 
     // with keepParagraphs, a paragraph parsed with other blocks stays a Paragraph even when it has one child,
     // so the group of blocks of an admonition, a list item or a callout item tells its paragraphs apart
+    // with firstLineIsText, the reader starts with the text of a list item or a callout, where a leading dot is not a block title
+    // unusedOptions, when not null, receives the block title and attributes that end the reader with no block after them
     private List<Element> doParse(final Path enclosingDocument, final Reader reader, final Predicate<String> continueTest,
                                   final ContentResolver resolver, final Map<String, String> attributes,
                                   final boolean supportComplexStructures,
-                                  final boolean skipTitle, final boolean keepParagraphs) {
+                                  final boolean firstLineIsText, final boolean keepParagraphs,
+                                  final Map<String, String> unusedOptions) {
         final var elements = new ArrayList<Element>(8);
         String next;
 
         int lastOptions = -1;
+        boolean textAhead = firstLineIsText; // the next line continues a text (the item text, or a line ending with ` +`), unless a paragraph end comes first
         Map<String, String> options = null;
         Matcher attributeMatcher;
         int spanStart = -1; // first line of the element(s) being parsed, 1-based, for the source listener
@@ -601,6 +605,8 @@ public class Parser {
             if (next == null) {
                 break;
             }
+            final boolean continuesText = textAhead && !reader.skippedParagraphEnd();
+            textAhead = false;
             spanStart = reader.getLineNumber() - 1;
             if (!continueTest.test(next) && !(next.startsWith("=") && isFloatingTitle(options))) {
                 reader.rewind();
@@ -632,7 +638,7 @@ public class Parser {
             } else if ("....".equals(verbatim)) {
                 elements.add(new Listing(parsePassthrough(enclosingDocument, reader, options, "....", resolver, attributes).value(), options));
                 options = null;
-            } else if (!skipTitle && stripped.startsWith(".") && !stripped.startsWith("..") && !stripped.startsWith(". ")) {
+            } else if (!continuesText && scanner.isBlockTitle(next)) {
                 options = merge(options, Map.of("title", sibling.unescapeAttributeReferences(newValue.strip().substring(1).strip())));
             } else if (Objects.equals("====", stripped)) {
                 Optional<Admonition.Level> level;
@@ -714,7 +720,8 @@ public class Parser {
                 while ((next = reader.nextLine()) != null && !"____".equals(next.strip())) {
                     buffer.add(next);
                 }
-                elements.add(new Quote(doParse(enclosingDocument, subReader(reader, null, buffer), l -> true, resolver, attributes, supportComplexStructures, skipTitle), options == null ? Map.of() : options));
+                // false: the quote is a block of its own, so its first line can be a block title, even in a list item
+                elements.add(new Quote(doParse(enclosingDocument, subReader(reader, null, buffer), l -> true, resolver, attributes, supportComplexStructures, false), options == null ? Map.of() : options));
                 options = null;
             } else if (isHorizontalRule(stripped)) {
                 elements.add(new HorizontalRule(options == null ? Map.of() : options));
@@ -723,6 +730,7 @@ public class Parser {
                 elements.addAll(parseLine(enclosingDocument, reader, stripped.substring(0, stripped.length() - 2), resolver, attributes, supportComplexStructures));
                 elements.add(new LineBreak());
                 options = null;
+                textAhead = true;
             } else if ((attributeMatcher = sibling.attributeEntry(stripped)) != null) {
                 sibling.applyAttributeEntry(attributeMatcher, attributes);
             } else {
@@ -736,6 +744,9 @@ public class Parser {
         }
         if (spans != null) {
             reportSource(listener, elements, spans);
+        }
+        if (unusedOptions != null && options != null) {
+            unusedOptions.putAll(options);
         }
         return elements;
     }
@@ -883,7 +894,7 @@ public class Parser {
         if (next != null && !next.startsWith("====")) {
             reader.rewind();
         }
-        final var elements = doParse(enclosingDocument, subReader(reader, null, content), l -> true, resolver, currentAttributes, true, false, keepsParagraphs(currentAttributes));
+        final var elements = doParse(enclosingDocument, subReader(reader, null, content), l -> true, resolver, currentAttributes, true, false, keepsParagraphs(currentAttributes), null);
         final var filteredOpts = options == null ? Map.<String, String>of() : options.entrySet().stream()
                 .filter(e -> !"".equals(e.getKey()))
                 .collect(toMap(Map.Entry::getKey, Map.Entry::getValue));
@@ -1077,7 +1088,7 @@ public class Parser {
                               final ContentResolver resolver, final Map<String, String> currentAttributes) {
         return switch (style) {
             case "a" -> {
-                final var content = doParse(enclosingDocument, subReader(parent, null, lines), line -> true, resolver, currentAttributes, true, false, keepsParagraphs(currentAttributes));
+                final var content = doParse(enclosingDocument, subReader(parent, null, lines), line -> true, resolver, currentAttributes, true, false, keepsParagraphs(currentAttributes), null);
                 yield content.size() == 1 ? content.get(0) : new Paragraph(content, Map.of());
             }
             case "e" -> withTextStyle(parseCell(enclosingDocument, "d", lines, parent, resolver, currentAttributes), EMPHASIS);
@@ -1590,7 +1601,8 @@ public class Parser {
             final var text = new StringBuilder(matcher.group("description"));
             readContinuation(reader, l -> CALLOUT.matcher(l).matches(), text);
 
-            final var elements = doParse(enclosingDocument, subReader(reader, null, List.of(text.toString().split("\n"))), l -> true, resolver, currentAttributes, true, false, keepsParagraphs(currentAttributes));
+            // true: the first line is the callout text, so `<1> .dot text` keeps its dot, as a list item does
+            final var elements = doParse(enclosingDocument, subReader(reader, null, List.of(text.toString().split("\n"))), l -> true, resolver, currentAttributes, true, true, keepsParagraphs(currentAttributes), null);
             callOuts.add(new CallOut(number, elements.size() == 1 ? elements.get(0) : new Paragraph(elements, Map.of())));
         }
         if (next != null) {
@@ -2800,7 +2812,7 @@ public class Parser {
         return parseList(
                 enclosingDocument,
                 reader, options, prefix, pattern, "wildcard",
-                UnOrderedList::children, UnOrderedList::new, resolver, currentAttributes);
+                UnOrderedList::children, UnOrderedList::new, resolver, currentAttributes, null);
     }
 
     private String detectOrderedListStyle(final String prefix, final String delim) {
@@ -2833,20 +2845,22 @@ public class Parser {
         return parseList(
                 enclosingDocument,
                 reader, options, prefix, ORDERED_LIST_PREFIX, "dots",
-                OrderedList::children, OrderedList::new, resolver, currentAttributes);
+                OrderedList::children, OrderedList::new, resolver, currentAttributes, null);
     }
 
     private <T extends Element> T parseList(final Path enclosingDocument, final Reader reader, final String options, final String prefix,
                                             final Pattern regex, final String captureName,
                                             final Function<T, List<Element>> childrenAccessor,
                                             final BiFunction<List<Element>, Map<String, String>, T> factory,
-                                            final ContentResolver resolver, final Map<String, String> currentAttributes) {
+                                            final ContentResolver resolver, final Map<String, String> currentAttributes,
+                                            final Map<String, String> titleOptions) {
         final var children = new ArrayList<Element>(2);
         String next;
         String nextStripped;
         final var buffer = new StringBuilder();
         Matcher matcher;
         boolean isChecklist = false;
+        Map<String, String> nestedOptions = null; // the block title and attributes that end an item right before its nested items: as asciidoctor, the nested list takes them
         final int currentLevel = prefix.length() - 1 /*ending space*/;
         while ((next = reader.nextLine()) != null && (matcher = regex.matcher((nextStripped = next.trim()))).matches() && !next.isBlank()) {
             final var level = matcher.group(captureName).length();
@@ -2859,7 +2873,7 @@ public class Parser {
                         matcher.group("prefix").length() + matcher.group("dots").length() :
                         prefix.length();
                 buffer.append(nextStripped.substring(markerLen).stripLeading());
-                readContinuation(reader, l -> regex.matcher(l.trim()).matches(), buffer);
+                nestedOptions = readContinuation(reader, l -> regex.matcher(l.trim()).matches(), buffer) ? new HashMap<>(2) : null;
 
                 final var rawContent = buffer.toString();
                 final var checkMatcher = CHECKBOX.matcher(rawContent);
@@ -2874,7 +2888,7 @@ public class Parser {
                     isChecked = false;
                 }
 
-                final var elements = doParse(enclosingDocument, subReader(reader, null, List.of(buffer.toString().split("\n"))), l -> true, resolver, currentAttributes, true, true, keepsParagraphs(currentAttributes));
+                final var elements = doParse(enclosingDocument, subReader(reader, null, List.of(buffer.toString().split("\n"))), l -> true, resolver, currentAttributes, true, true, keepsParagraphs(currentAttributes), nestedOptions);
                 if (isCheckItem) {
                     children.add(new Paragraph(elements, isChecked ? Map.of("checkbox", "true", "checked", "true") : Map.of("checkbox", "true")));
                 } else {
@@ -2885,7 +2899,8 @@ public class Parser {
                 final var nestedList = parseList(
                         enclosingDocument,
                         reader, null, prefix.charAt(0) + prefix,
-                        regex, captureName, childrenAccessor, factory, resolver, currentAttributes);
+                        regex, captureName, childrenAccessor, factory, resolver, currentAttributes, nestedOptions);
+                nestedOptions = null;
                 if (!childrenAccessor.apply(nestedList).isEmpty()) {
                     addCollapsingChildOnParent(children, nestedList);
                 }
@@ -2895,6 +2910,9 @@ public class Parser {
             reader.rewind();
         }
         Map<String, String> listOptions = options == null ? Map.of() : parseOptions(options);
+        if (titleOptions != null && !titleOptions.isEmpty()) {
+            listOptions = merge(listOptions, Map.copyOf(titleOptions));
+        }
         if (isChecklist) {
             final var merged = new HashMap<>(listOptions);
             merged.put("checklist", "true");
@@ -2904,35 +2922,64 @@ public class Parser {
     }
 
     // reads the rest of a list item - text wrapping on the next lines, blocks attached with `+` - until a blank
-    // line or the next item (stopsAt); shared by the ordered, unordered and callout lists
-    private void readContinuation(final Reader reader, final Predicate<String> stopsAt, final StringBuilder buffer) {
+    // line or the next item (stopsAt); shared by the ordered, unordered and callout lists.
+    // As asciidoctor, the block metadata attached with `+` (a block title, a block attribute line, an attribute entry)
+    // waits for its delimited block over one blank line, not over two.
+    // Returns whether the lines read end with such metadata, which has no block in them.
+    private boolean readContinuation(final Reader reader, final Predicate<String> stopsAt, final StringBuilder buffer) {
         String next;
         String needed = null;
+        boolean attached = false; // the last line is a lone `+`
+        boolean pending = false; // the last lines are block metadata attached with `+`
         while ((next = reader.nextLine()) != null) {
             if (Objects.equals(needed, next)) {
                 needed = null;
             } else if (isBlock(next)) {
                 needed = next;
             } else if (needed == null && next.isBlank()) {
-                break;
+                if (!pending) {
+                    break;
+                }
+                final var afterBlank = reader.nextLine();
+                if (afterBlank == null || !isBlockDelimiter(afterBlank)) {
+                    if (afterBlank != null) {
+                        reader.rewind();
+                    }
+                    break;
+                }
+                buffer.append('\n');
+                next = afterBlank;
+                needed = afterBlank;
             } else if ("+".equals(next.strip())) { // continuation
                 buffer.append('\n');
+                attached = needed == null;
                 continue;
             } else if (needed == null && stopsAt.test(next)) {
                 break;
             }
+            pending = needed == null && (attached || pending) && isBlockMetadata(next);
+            attached = false;
             buffer.append('\n').append(next);
         }
         if (next != null) {
             reader.rewind();
         }
+        return pending;
+    }
+
+    private boolean isBlockMetadata(final String line) {
+        return scanner.isBlockTitle(line) || line.startsWith("[") && line.endsWith("]") || sibling.attributeEntry(line) != null;
     }
 
     private boolean isBlock(final String strippedLine) {
+        return isBlockDelimiter(strippedLine) || isHorizontalRule(strippedLine);
+    }
+
+    // the delimiters that a second line of the same text closes
+    private boolean isBlockDelimiter(final String strippedLine) {
         return "====".equals(strippedLine) || "----".equals(strippedLine) ||
                 "```".equals(strippedLine) || "--".equals(strippedLine) ||
-                "++++".equals(strippedLine) || "****".equals(strippedLine) ||
-                isHorizontalRule(strippedLine);
+                "++++".equals(strippedLine) || "****".equals(strippedLine) || "____".equals(strippedLine);
     }
 
     private void addTextElements(final Path enclosingDocument, final String line, final int i, final int end,
